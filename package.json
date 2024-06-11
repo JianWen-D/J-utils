@@ -1,0 +1,37 @@
+{
+  "name": "j-utils",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "build": "rollup -c && npm run build:typed",
+    "build:typed": "tsc --declaration --emitDeclarationOnly --noEmit false --declarationDir es"
+  },
+  "keywords": [
+    "Janvem",
+    "axios",
+    "request"
+  ],
+  "type": "module",
+  "module": "es/index.js",
+  "main": "es/index.js",
+  "typings": "es/index.d.ts",
+  "author": "Janvem",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.2"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.24.7",
+    "@rollup/plugin-alias": "^5.1.0",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-commonjs": "^26.0.1",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "cross-env": "^7.0.3",
+    "rollup": "^4.18.0",
+    "rollup-plugin-delete": "^2.0.0",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "typescript": "^5.4.5"
+  }
+}
