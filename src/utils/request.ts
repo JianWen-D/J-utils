@@ -186,8 +186,6 @@ class JAxios {
         if (error.response) {
           const config = error.response.config as interceptorsRequestConfig;
           // 判断当前的状态是否等于token的过期时间
-          console.log(error.response, config);
-
           const requestKey = this.generateReqKey(config);
           if (this.pendingMap.has(requestKey)) {
             this.pendingMap.delete(requestKey);
@@ -269,7 +267,6 @@ class JAxios {
     console?.warn("温馨提示：Token过期");
     // 判断当前的等待状态
     if (this.isBlocking) {
-      console.log("111");
       return new Promise((resolve, reject) => {
         this.reloadRequest.push(() => {
           resolve(this.interface.axiosInstance.request(_config));
@@ -279,7 +276,6 @@ class JAxios {
       // 设置等待状态
       this.isBlocking = true;
       _config.refreshRequet(() => {
-        console.log("success refresh", this.reloadRequest);
         // 取消等待状态
         this.isBlocking = false;
         // 遍历等待列表中的接口
@@ -307,7 +303,6 @@ class JAxios {
     config.cancelToken =
       config?.cancelToken ||
       new axios.CancelToken((cancel) => {
-        console.log("addPendingMap", this.pendingMap.has(requestKey));
         if (!this.pendingMap.has(requestKey)) {
           this.pendingMap.set(requestKey, cancel);
         }
@@ -317,7 +312,6 @@ class JAxios {
   private removePendingMap(config: AxiosRequestConfig) {
     const requestKey = this.generateReqKey(config);
     if (this.pendingMap.has(requestKey)) {
-      console.log("removePendingMap", this.pendingMap.has(requestKey));
       const cancelToken = this.pendingMap.get(requestKey);
       cancelToken(requestKey);
       this.pendingMap.delete(requestKey);
