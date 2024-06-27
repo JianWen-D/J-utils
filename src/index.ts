@@ -1,8 +1,9 @@
-import request from '@/utils/request';
+import JAxios from "./utils/request";
+// export type {  } from '@/utils/request';
 
-const a = 1;
+export { JAxios };
+// export default {
+//   request,
+// };
 
-export default {
-  request,
-  a
-};
+// export default request;

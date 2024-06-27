@@ -20,11 +20,12 @@
     },
   },
   "include": [
-    "src"
+    "src",
+    "views"
   ],
   "exclude": [
     "node_modules",
     "lib",
-    "es"
+    "es",
   ]
 }

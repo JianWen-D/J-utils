@@ -1,32 +1,38 @@
 // import qs from 'qs';
-import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, Method } from 'axios';
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  AxiosResponse,
+  Method,
+} from "axios";
 export interface RequestCustomConfigType {
   // 请求域名地址
   baseURL?: string;
-  // 请求超时时间
+  // 请求超时时间， default : 60s
   timeout?: number;
-  // 是否需要token
+  // 是否需要token, default: true
   isNeedToken?: boolean;
-  // 设置token的keyName
-  headerTokenKey?: string;
+  // 设置token的keyName, default: 'Authorization'
+  haderTokenKeyName?: string;
   // 设置请求拦截回调方法
-  beforeRequest?: (config: AxiosRequestConfig) => void;
+  handleBeforeRequest?: (config: AxiosRequestConfig) => void;
   // 设置响应拦截回调方法
-  afterResponse?: (response: AxiosResponse) => void;
-  // 自定义头部字段
+  handleAfterResponse?: (response: AxiosResponse) => void;
+  // 自定义头部字段, default: {}
   customHeader?: any;
   // 激活接口loading的状态
   loading?: boolean;
   // loading的全局回调接口
   loadingCallback?: (loading: boolean) => void;
   // 设置无权限code，默认：401
-  noPermissionCode?: number | string;
+  noPermissionCode?: number;
   // 设置refreshToken的请求参数
-  refreshConfig?: RequestParamsType;
+  refreshRequet?: (callback: (token?: string) => AxiosResponse<string>) => void;
   // 请求key
   requestKey?: string;
   // token前缀
-  prefix?: string;
+  tokenPrefix?: string;
 }
 
 export interface RequestParamsType {
@@ -36,11 +42,13 @@ export interface RequestParamsType {
   body?: any;
   options?: AxiosRequestConfig;
   config?: RequestCustomConfigType;
-  success?: (data: any) => string;
+  success?: (data: any) => void;
   error?: () => void;
 }
 // 自定义请求配置
-export interface interceptorsRequestConfig extends AxiosRequestConfig, RequestCustomConfigType {
+export interface interceptorsRequestConfig
+  extends AxiosRequestConfig,
+    RequestCustomConfigType {
   requestKey: string;
 }
 
@@ -61,32 +69,38 @@ class InterfaceInstance {
   /**
    * 设置请求拦截
    */
-  interceptorsRequest(callback = (config: AxiosRequestConfig): AxiosRequestConfig => config) {
-    this.axiosInstance.interceptors.request.use((config: any) => {
+  interceptorsRequest(
+    callback = (config: AxiosRequestConfig): AxiosRequestConfig => config
+  ) {
+    this.axiosInstance.interceptors.request.use(
+      (config: any) => {
         // 在发送请求之前做些什么
-        const _config: any = callback(config)
+        const _config: any = callback(config);
         return _config;
       },
       (error: AxiosError) => {
         // 对请求错误做些什么
         return Promise.reject(error);
-      },
+      }
     );
   }
 
   /**
    * 设置响应拦截
    */
-  interceptorsResponse(callback = (response: AxiosResponse): AxiosResponse => response, errorCatch = (error: AxiosError) => {}) {
+  interceptorsResponse(
+    callback = (response: AxiosResponse): AxiosResponse => response,
+    errorCatch = (error: AxiosError) => {}
+  ) {
     this.axiosInstance.interceptors.response.use(
       (response: any) => {
         // 对响应数据做点什么
-        const _response: any = callback(response)
+        const _response: any = callback(response);
         return _response;
       },
       (error: AxiosError) => {
         return errorCatch(error);
-      },
+      }
     );
   }
 }
@@ -98,76 +112,113 @@ class JAxios {
   loadingMap: Map<any, any>; // loading map数组
   pendingMap: Map<any, any>; // loading map数组
   reloadRequest: Function[]; // 等待请求队列
+  refreshRequet: (callback: (token?: string) => AxiosResponse<string>) => void; // 等待请求队列
   isBlocking: boolean; // 等待请求队列
   tokenKey: string;
   constructor(config: RequestCustomConfigType = {}) {
-    this.token = '';
+    this.token = "";
     this.defaultConfig = config;
     this.interface = new InterfaceInstance(config);
     this.reloadRequest = [];
     this.loadingMap = new Map();
     this.pendingMap = new Map();
     this.isBlocking = false;
-    this.tokenKey = `${config.prefix || ''}_AUTH_TOKEN_`.toLocaleUpperCase()
+    this.refreshRequet = config.refreshRequet;
+    this.tokenKey = `${
+      config.tokenPrefix || ""
+    }_AUTH_TOKEN_`.toLocaleUpperCase();
     // 检测请求拦截配置
     this.interface.interceptorsRequest((_config: interceptorsRequestConfig) => {
-      this.removePendingMap(_config); // 检查是否存在重复请求，若存在则取消已发的请求
-      this.addPendingMap(_config); // 把当前请求信息添加到pendingRequest对象中
+      // 检查是否存在重复请求，yes:取消已发的请求, no: continues
+      this.removePendingMap(_config);
+      // 把当前请求信息添加到pendingRequest对象中
+      this.addPendingMap(_config);
       // 检测是否插入token, 浏览器储存的headerTokenKey与返回的header中的key一致
       if (_config.isNeedToken) {
-        if (
+        const TOKEN =
           this.token ||
           (window as any).localStorage.getItem(this.tokenKey) ||
-          (window as any).sessionStorage.getItem(this.tokenKey)
-        ) {
+          (window as any).sessionStorage.getItem(this.tokenKey);
+        if (TOKEN) {
           _config.headers = {
             ..._config.headers,
-            [(_config.headerTokenKey as string) || 'Authorization']:
-              this.token ||
-              (window as any).localStorage.getItem(this.tokenKey) ||
-              (window as any).sessionStorage.getItem(this.tokenKey),
+            [(_config.haderTokenKeyName as string) || "Authorization"]: TOKEN,
           };
         } else {
-          console?.warn('温馨提示: 在缓存中检测不到_AUTH_TOKEN_, 请通过setToken方法设置_AUTH_TOKEN_再重试。');
+          console?.warn(
+            "温馨提示: 在缓存中检测不到token值, 请通过setToken方法设置在缓存中检测不到token值再重试。"
+          );
         }
       }
       // 标记请求拦截中的loading
-      _config.loading && this.handleLoading(true, _config.requestKey, this.defaultConfig.loadingCallback);
-      // 返回自定义相应拦截的对象实例
-      return this.defaultConfig.beforeRequest && (this.defaultConfig.beforeRequest as Function)(_config);
+      _config.loading &&
+        this.handleLoading(
+          true,
+          _config.requestKey,
+          this.defaultConfig.loadingCallback
+        );
+      // 返回自定义请求拦截的对象实例
+      return (
+        (this.defaultConfig.handleBeforeRequest &&
+          (this.defaultConfig.handleBeforeRequest as Function)(_config)) ||
+        _config
+      );
     });
     // 检测响应拦截配置
     this.interface.interceptorsResponse(
       (response: AxiosResponse) => {
         const config = response.config as interceptorsRequestConfig;
         // 消除响应拦截中的loading
-        config.loading && this.handleLoading(false, config.requestKey, this.defaultConfig.loadingCallback);
-        return this.defaultConfig.afterResponse && (this.defaultConfig.afterResponse as Function)(response);
+        config.loading &&
+          this.handleLoading(
+            false,
+            config.requestKey,
+            this.defaultConfig.loadingCallback
+          );
+        // 返回自定义响应拦截的对象实力
+        return (
+          (this.defaultConfig.handleAfterResponse &&
+            (this.defaultConfig.handleAfterResponse as Function)(response)) ||
+          response
+        );
       },
       (error: AxiosError) => {
         if (error.response) {
-          const config = error.response?.config as interceptorsRequestConfig;
+          const config = error.response.config as interceptorsRequestConfig;
           // 判断当前的状态是否等于token的过期时间
+          console.log(error.response, config);
+
+          const requestKey = this.generateReqKey(config);
+          if (this.pendingMap.has(requestKey)) {
+            this.pendingMap.delete(requestKey);
+          }
           if (
             error.response?.status === (config?.noPermissionCode || 401) &&
-            config?.refreshConfig &&
-            error.response?.config.url !== config?.refreshConfig?.url
+            config?.refreshRequet
           ) {
-            return this.handleUnauthorizedToken(error.response?.config);
+            return this.handleUnauthorizedToken(
+              error.response?.config as interceptorsRequestConfig
+            );
           } else {
-            console?.warn(JSON.stringify(error.response?.data) || '操作失败')
+            console?.warn(JSON.stringify(error.response?.data) || "操作失败");
           }
         }
-        config?.loading && this.handleLoading(false, config.requestKey, this.defaultConfig.loadingCallback);
+        //
+        config?.loading &&
+          this.handleLoading(
+            false,
+            config.requestKey,
+            this.defaultConfig.loadingCallback
+          );
         return Promise.reject(error);
-      },
+      }
     );
   }
   /**
    * 保存token
    * @param token token
    */
-  setToken(token = '') {
+  setToken(token = "") {
     (window as any).localStorage.setItem(this.tokenKey, token);
     this.token = token;
   }
@@ -177,7 +228,7 @@ class JAxios {
    */
   clearToken() {
     (window as any).localStorage.removeItem(this.tokenKey);
-    this.token = '';
+    this.token = "";
   }
 
   /**
@@ -188,7 +239,11 @@ class JAxios {
    * @param callback 回调方法
    * @returns
    */
-  private handleLoading(loading: boolean, requestKey: string, callback = (loading: boolean) => {}) {
+  private handleLoading(
+    loading: boolean,
+    requestKey: string,
+    callback = (loading: boolean) => {}
+  ) {
     if (loading) {
       // 存储处于loading的请求
       this.loadingMap.set(requestKey, true);
@@ -209,54 +264,29 @@ class JAxios {
   }
 
   // 处理token过期
-  private handleUnauthorizedToken(config: any) {
+  private async handleUnauthorizedToken(_config: interceptorsRequestConfig) {
     // 日志输出
-    console?.warn('温馨提示：Token过期');
+    console?.warn("温馨提示：Token过期");
     // 判断当前的等待状态
     if (this.isBlocking) {
+      console.log("111");
       return new Promise((resolve, reject) => {
         this.reloadRequest.push(() => {
-          resolve(this.interface.axiosInstance.request(config));
+          resolve(this.interface.axiosInstance.request(_config));
         });
       });
     } else {
       // 设置等待状态
       this.isBlocking = true;
-      // 请求refresh接口
-      return this.request(
-        {
-          method: this.defaultConfig.refreshConfig?.method,
-          url: this.defaultConfig.refreshConfig?.url,
-          params: this.defaultConfig.refreshConfig?.params,
-          ...this.defaultConfig.refreshConfig?.options,
-        },
-        this.defaultConfig.refreshConfig?.config,
-      )
-        .then((res: any) => {
-          // 取消等待状态
-          this.isBlocking = false;
-          // 获取新token
-          const newToken = this.defaultConfig.refreshConfig?.success(res.data);
-          if (!newToken) {
-            this.defaultConfig.refreshConfig?.error();
-            return Promise.resolve('');
-          }
-          // 保存token
-          this.setToken(`Bearer ${newToken}`);
-          // 遍历等待列表中的接口
-          this.reloadRequest.forEach((item) => item());
-          this.reloadRequest = [];
-          return this.interface.axiosInstance.request(config);
-        })
-        .catch((err) => {
-          this.defaultConfig.refreshConfig?.error();
-          this.clearToken();
-          return Promise.resolve(err);
-        })
-        .finally(() => {
-          // 取消等待状态
-          this.isBlocking = false;
-        });
+      _config.refreshRequet(() => {
+        console.log("success refresh", this.reloadRequest);
+        // 取消等待状态
+        this.isBlocking = false;
+        // 遍历等待列表中的接口
+        this.reloadRequest.forEach((item) => item());
+        this.reloadRequest = [];
+        return this.interface.axiosInstance.request(_config);
+      });
     }
   }
 
@@ -267,22 +297,27 @@ class JAxios {
    */
   private generateReqKey(config: AxiosRequestConfig) {
     const { method, url, params, data } = config;
-    return [method, url, JSON.stringify(params), JSON.stringify(data)].join('_');
+    return [method, url, JSON.stringify(params), JSON.stringify(data)].join(
+      "_"
+    );
   }
 
   private addPendingMap(config: AxiosRequestConfig) {
     const requestKey = this.generateReqKey(config);
     config.cancelToken =
-      config.cancelToken ||
+      config?.cancelToken ||
       new axios.CancelToken((cancel) => {
+        console.log("addPendingMap", this.pendingMap.has(requestKey));
         if (!this.pendingMap.has(requestKey)) {
           this.pendingMap.set(requestKey, cancel);
         }
       });
   }
+
   private removePendingMap(config: AxiosRequestConfig) {
     const requestKey = this.generateReqKey(config);
     if (this.pendingMap.has(requestKey)) {
+      console.log("removePendingMap", this.pendingMap.has(requestKey));
       const cancelToken = this.pendingMap.get(requestKey);
       cancelToken(requestKey);
       this.pendingMap.delete(requestKey);
@@ -297,7 +332,7 @@ class JAxios {
    */
   private handleBeforeRequest(
     requestConfig: AxiosRequestConfig,
-    customConfig: RequestCustomConfigType,
+    customConfig: RequestCustomConfigType
   ): AxiosRequestConfig {
     // 每个请求的唯一key
     const requestKey = this.generateReqKey(requestConfig);
@@ -321,14 +356,14 @@ class JAxios {
    */
   private async request(
     requestConfig: AxiosRequestConfig,
-    customConfig?: RequestCustomConfigType,
+    customConfig?: RequestCustomConfigType
   ): Promise<AxiosResponse> {
     // 返回请求结果
     return this.interface.axiosInstance.request(
       this.handleBeforeRequest(requestConfig, {
         ...this.defaultConfig,
         ...customConfig,
-      }),
+      })
     );
   }
 
@@ -337,15 +372,15 @@ class JAxios {
    * @param config 请求配置项
    * @returns 返回请求结果
    */
-  async get<T>(config: RequestParamsType): Promise<AxiosResponse<T>> {
+  async get<T>(config: RequestParamsType): Promise<T> {
     return this.request(
       {
-        method: 'GET',
+        method: "GET",
         url: config.url,
         params: config.params,
         ...config.options,
       },
-      config.config,
+      config.config
     ).then((res) => res?.data);
   }
 
@@ -354,15 +389,15 @@ class JAxios {
    * @param config 请求配置项
    * @returns 返回请求结果
    */
-  async post<T>(config: RequestParamsType): Promise<AxiosResponse<T>> {
+  async post<T>(config: RequestParamsType): Promise<T> {
     return this.request(
       {
-        method: 'POST',
+        method: "POST",
         url: config.url,
         data: config.params,
         ...config.options,
       },
-      config.config,
+      config.config
     ).then((res) => res?.data);
   }
   /**
@@ -370,15 +405,15 @@ class JAxios {
    * @param config 请求配置项
    * @returns 返回请求结果
    */
-  async put<T>(config: RequestParamsType): Promise<AxiosResponse<T>> {
+  async put<T>(config: RequestParamsType): Promise<T> {
     return this.request(
       {
-        method: 'PUT',
+        method: "PUT",
         url: config.url,
         data: config.params,
         ...config.options,
       },
-      config.config,
+      config.config
     ).then((res) => res?.data);
   }
   /**
@@ -386,15 +421,15 @@ class JAxios {
    * @param config 请求配置项
    * @returns 返回请求结果
    */
-  async delete<T>(config: RequestParamsType): Promise<AxiosResponse<T>> {
+  async delete<T>(config: RequestParamsType): Promise<T> {
     return this.request(
       {
-        method: 'DELETE',
+        method: "DELETE",
         url: config.url,
         data: config.params,
         ...config.options,
       },
-      config.config,
+      config.config
     ).then((res) => res?.data);
   }
   /**
@@ -402,10 +437,10 @@ class JAxios {
    * @param config 请求配置项
    * @returns 返回请求结果
    */
-  async form<T>(config: RequestParamsType): Promise<AxiosResponse<T>> {
+  async form<T>(config: RequestParamsType): Promise<T> {
     return this.request(
       {
-        method: 'POST',
+        method: "POST",
         url: config.url,
         params: config.params,
         ...config.options,
@@ -413,9 +448,9 @@ class JAxios {
       {
         ...config.config,
         customHeader: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-      },
+      }
     ).then((res) => res?.data);
   }
   /**
@@ -423,7 +458,7 @@ class JAxios {
    * @param config 请求配置项
    * @returns 返回请求结果
    */
-  async upload<T>(config: RequestParamsType): Promise<AxiosResponse<T>> {
+  async upload<T>(config: RequestParamsType): Promise<T> {
     const toFormData = function (params: any = {}) {
       const formData = new FormData();
       Object.keys(params).forEach((key) => {
@@ -435,7 +470,7 @@ class JAxios {
 
     return this.request(
       {
-        method: 'POST',
+        method: "POST",
         url: config.url,
         data: fromData,
         ...config.options,
@@ -443,9 +478,9 @@ class JAxios {
       {
         ...config.config,
         customHeader: {
-          'Content-Type': 'multipart/form-data',
+          "Content-Type": "multipart/form-data",
         },
-      },
+      }
     ).then((res) => res?.data);
   }
   /**
@@ -455,12 +490,12 @@ class JAxios {
    */
   async download(config: RequestParamsType): Promise<AxiosResponse> {
     return this.request({
-      method: config.method || 'GET',
+      method: config.method || "GET",
       url: config.url,
       params: config.params,
       ...config.options,
       ...{
-        responseType: 'blob',
+        responseType: "blob",
       },
     }).then((res) => res);
   }
