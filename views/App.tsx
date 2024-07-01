@@ -11,6 +11,7 @@ const request = new JAxios({
   baseURL: "http://localhost:7001",
   noPermissionCode: 401,
   isNeedToken: true,
+  timeout: 1000,
   // handleBeforeRequest: (config) => {
   //   return config;
   // },
@@ -27,9 +28,11 @@ const request = new JAxios({
         callback();
       });
   },
+  retryConfig: {
+    wait: 2000,
+    count: 3,
+  },
 });
-
-request.reloadRequest;
 
 export default () => {
   const fetchGet = async (num) => {
@@ -43,6 +46,8 @@ export default () => {
 
   useEffect(() => {
     fetchGet(1);
+    fetchGet(1);
+    fetchGet(2);
     // setTimeout(() => {
     //   fetchGet(2);
     // }, 500);

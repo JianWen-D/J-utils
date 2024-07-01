@@ -33,6 +33,14 @@ export interface RequestCustomConfigType {
   requestKey?: string;
   // token前缀
   tokenPrefix?: string;
+  // 展示报错提示
+  showMessage?: (msg: string | any) => void;
+  // 重连设置
+  retryConfig?: {
+    wait: number; // 毫秒, 连接超时后等待多少秒后重连
+    count: number; // 最大重连次数
+  };
+  retryCurrentCount?: number;
 }
 
 export interface RequestParamsType {
@@ -50,6 +58,7 @@ export interface interceptorsRequestConfig
   extends AxiosRequestConfig,
     RequestCustomConfigType {
   requestKey: string;
+  retryCurrentCount: number;
 }
 
 class InterfaceInstance {
@@ -130,15 +139,13 @@ class JAxios {
     // 检测请求拦截配置
     this.interface.interceptorsRequest((_config: interceptorsRequestConfig) => {
       // 检查是否存在重复请求，yes:取消已发的请求, no: continues
-      this.removePendingMap(_config);
+      this.removePendingMap(_config.requestKey);
       // 把当前请求信息添加到pendingRequest对象中
       this.addPendingMap(_config);
       // 检测是否插入token, 浏览器储存的headerTokenKey与返回的header中的key一致
       if (_config.isNeedToken) {
         const TOKEN =
-          this.token ||
-          (window as any).localStorage.getItem(this.tokenKey) ||
-          (window as any).sessionStorage.getItem(this.tokenKey);
+          this.token || (window as any).localStorage.getItem(this.tokenKey);
         if (TOKEN) {
           _config.headers = {
             ..._config.headers,
@@ -175,7 +182,7 @@ class JAxios {
             config.requestKey,
             this.defaultConfig.loadingCallback
           );
-        // 返回自定义响应拦截的对象实力
+        // 返回自定义响应拦截的对象实例
         return (
           (this.defaultConfig.handleAfterResponse &&
             (this.defaultConfig.handleAfterResponse as Function)(response)) ||
@@ -186,10 +193,10 @@ class JAxios {
         if (error.response) {
           const config = error.response.config as interceptorsRequestConfig;
           // 判断当前的状态是否等于token的过期时间
-          const requestKey = this.generateReqKey(config);
-          if (this.pendingMap.has(requestKey)) {
-            this.pendingMap.delete(requestKey);
+          if (this.pendingMap.has(config.requestKey)) {
+            this.pendingMap.delete(config.requestKey);
           }
+          // token过期
           if (
             error.response?.status === (config?.noPermissionCode || 401) &&
             config?.refreshRequet
@@ -200,15 +207,20 @@ class JAxios {
           } else {
             console?.warn(JSON.stringify(error.response?.data) || "操作失败");
           }
+          // 回调报错信息提示
+          config.showMessage(error.response?.data || error.message);
         }
-        //
+        // 撤销loading状态
         config?.loading &&
           this.handleLoading(
             false,
             config.requestKey,
             this.defaultConfig.loadingCallback
           );
-        return Promise.reject(error);
+        // 重连
+        return error.code === "ECONNABORTED"
+          ? this.retry(error)
+          : Promise.reject(error);
       }
     );
   }
@@ -298,24 +310,62 @@ class JAxios {
     );
   }
 
-  private addPendingMap(config: AxiosRequestConfig) {
-    const requestKey = this.generateReqKey(config);
+  /**
+   * 添加当前请求的唯一值
+   * @param config 请求配置
+   */
+  private addPendingMap(config: interceptorsRequestConfig) {
     config.cancelToken =
       config?.cancelToken ||
       new axios.CancelToken((cancel) => {
-        if (!this.pendingMap.has(requestKey)) {
-          this.pendingMap.set(requestKey, cancel);
+        if (!this.pendingMap.has(config.requestKey)) {
+          this.pendingMap.set(config.requestKey, cancel);
         }
       });
   }
 
-  private removePendingMap(config: AxiosRequestConfig) {
-    const requestKey = this.generateReqKey(config);
+  /**
+   * 清除当前请求的唯一值，取消token
+   * @param requestKey 请求配置
+   */
+  private removePendingMap(requestKey: string) {
     if (this.pendingMap.has(requestKey)) {
       const cancelToken = this.pendingMap.get(requestKey);
       cancelToken(requestKey);
       this.pendingMap.delete(requestKey);
     }
+  }
+
+  /**
+   * 重连
+   * @param error 请求错误
+   * @returns
+   */
+  private retry(error: AxiosError) {
+    const config: any = error.config;
+    if (config.retryConfig) {
+      const { wait = 2000, count = 3 } = config.retryConfig;
+      config.retryCurrentCount = config.retryCurrentCount ?? 0;
+      console.log(`第${config.retryCurrentCount}次重连`);
+      if (this.pendingMap.has(config.requestKey)) {
+        this.pendingMap.delete(config.requestKey);
+      }
+      // 如果当前的重复请求次数已经大于规定次数，则返回Promise
+      if (config.retryCurrentCount >= count) {
+        return Promise.reject(error);
+      }
+      config.retryCurrentCount++;
+
+      // 等待间隔时间结束后再执行请求
+      return this.wait(wait).then(() =>
+        this.interface.axiosInstance.request(config)
+      );
+    }
+    return Promise.reject(error);
+  }
+
+  private wait(waitTime: number) {
+    return new Promise((resolve) => setTimeout(resolve, waitTime));
   }
 
   /**
