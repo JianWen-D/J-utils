@@ -12,12 +12,6 @@ const request = new JAxios({
   noPermissionCode: 401,
   isNeedToken: true,
   timeout: 1000,
-  // handleBeforeRequest: (config) => {
-  //   return config;
-  // },
-  // handleAfterResponse: (response) => {
-  //   return response;
-  // },
   refreshRequet: (callback) => {
     request
       .get<responseType<string>>({

@@ -158,12 +158,7 @@ class JAxios {
         }
       }
       // 标记请求拦截中的loading
-      _config.loading &&
-        this.handleLoading(
-          true,
-          _config.requestKey,
-          this.defaultConfig.loadingCallback
-        );
+      _config.loading && this.handleLoading("add", _config.requestKey);
       // 返回自定义请求拦截的对象实例
       return (
         (this.defaultConfig.handleBeforeRequest &&
@@ -176,12 +171,7 @@ class JAxios {
       (response: AxiosResponse) => {
         const config = response.config as interceptorsRequestConfig;
         // 消除响应拦截中的loading
-        config.loading &&
-          this.handleLoading(
-            false,
-            config.requestKey,
-            this.defaultConfig.loadingCallback
-          );
+        config.loading && this.handleLoading("remove", config.requestKey);
         // 返回自定义响应拦截的对象实例
         return (
           (this.defaultConfig.handleAfterResponse &&
@@ -211,12 +201,7 @@ class JAxios {
           config.showMessage(error.response?.data || error.message);
         }
         // 撤销loading状态
-        config?.loading &&
-          this.handleLoading(
-            false,
-            config.requestKey,
-            this.defaultConfig.loadingCallback
-          );
+        config?.loading && this.handleLoading("remove", config.requestKey);
         // 重连
         return error.code === "ECONNABORTED"
           ? this.retry(error)
@@ -243,34 +228,26 @@ class JAxios {
 
   /**
    * 处理loading
-   * @param loading 当前loading状态
+   * @param loadingType 是否添加loading
    * @param requestKey 请求唯一key
    * @param loadingMap loadingMap
-   * @param callback 回调方法
    * @returns
    */
-  private handleLoading(
-    loading: boolean,
-    requestKey: string,
-    callback = (loading: boolean) => {}
-  ) {
-    if (loading) {
-      // 存储处于loading的请求
-      this.loadingMap.set(requestKey, true);
-      // 如果当前无loading中的的接口，则回调方法false
-      if (this.loadingMap.size === 1) {
-        callback?.(true);
-      }
-      return;
+  private handleLoading(loadingType: "add" | "remove", requestKey: string) {
+    switch (loadingType) {
+      case "add":
+        this.loadingMap.set(requestKey, true);
+        break;
+      default:
+        // 判断是否存在当前请求
+        if (this.loadingMap.has(requestKey)) {
+          // 删除loading的请求
+          this.loadingMap.delete(requestKey);
+        }
+        break;
     }
-    if (this.loadingMap.has(requestKey)) {
-      // 删除loading的请求
-      this.loadingMap.delete(requestKey);
-      // 如果当前无loading中的的接口，则回调方法false
-      if (this.loadingMap.size === 0) {
-        callback?.(false);
-      }
-    }
+    // 如果当前无loading中的的接口，则回调方法false
+    this.defaultConfig.loadingCallback?.(this.loadingMap.size > 0);
   }
 
   // 处理token过期
